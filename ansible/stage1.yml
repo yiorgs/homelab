@@ -1,0 +1,107 @@
+---
+- name: Stage 1 - hardened Pi server
+  hosts: homelab
+  become: true
+
+  tasks:
+    # ---------- Part 2: packages and automatic updates ----------
+    - name: Update the package list
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install tmux and unattended-upgrades
+      ansible.builtin.apt:
+        name:
+          - tmux
+          - unattended-upgrades
+        state: present
+
+    - name: Turn on daily automatic security updates
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+        owner: root
+        group: root
+        mode: "0644"
+
+    # ---------- Part 3: firewall (order matters!) ----------
+    - name: Install the ufw firewall
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+
+    - name: Allow SSH through the firewall (BEFORE turning it on)
+      community.general.ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+
+    - name: Block all incoming connections by default
+      community.general.ufw:
+        default: deny
+        direction: incoming
+
+    - name: Allow all outgoing connections by default
+      community.general.ufw:
+        default: allow
+        direction: outgoing
+
+    - name: Turn the firewall on
+      community.general.ufw:
+        state: enabled
+
+    # ---------- Part 3: SSH hardening ----------
+    - name: SSH - key login only, no root login
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/01-homelab-hardening.conf
+        content: |
+          # Managed by Ansible (homelab stage1.yml)
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PermitRootLogin no
+        owner: root
+        group: root
+        mode: "0644"
+        validate: /usr/sbin/sshd -t -f %s
+      notify: Reload SSH
+
+    - name: Read the SSH settings sshd will actually use
+      ansible.builtin.command: /usr/sbin/sshd -T
+      register: sshd_settings
+      changed_when: false
+      check_mode: false
+
+    - name: Confirm password login is off
+      ansible.builtin.assert:
+        that:
+          - "'passwordauthentication no' in sshd_settings.stdout"
+          - "'kbdinteractiveauthentication no' in sshd_settings.stdout"
+        fail_msg: "Password login is NOT off. Fix this before closing your SSH session."
+        success_msg: "Key-only login confirmed."
+
+    # ---------- Part 4: permanent Wi-Fi profile ----------
+    - name: Permanent Wi-Fi profile (homelab-wifi)
+      community.general.nmcli:
+        conn_name: homelab-wifi
+        type: wifi
+        ifname: wlan0
+        ssid: "{{ vault_wifi_ssid }}"
+        wifi_sec:
+          key-mgmt: wpa-psk
+          psk: "{{ vault_wifi_password }}"
+        wifi:
+          powersave: 2
+        autoconnect: true
+        autoconnect_priority: 10
+        method4: auto
+        state: present
+      no_log: true
+
+  handlers:
+    - name: Reload SSH
+      ansible.builtin.service:
+        name: ssh
+        state: reloaded

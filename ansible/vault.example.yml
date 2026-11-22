@@ -1,0 +1,6 @@
+# Example only. To use it:
+#   1. Copy it to group_vars/homelab/vault.yml
+#   2. Replace CHANGE-ME with your real Wi-Fi name and password
+#   3. Encrypt it: ansible-vault encrypt group_vars/homelab/vault.yml
+vault_wifi_ssid: "CHANGE-ME"
+vault_wifi_password: "CHANGE-ME"

@@ -1,0 +1,7 @@
+# macOS Finder files
+.DS_Store
+
+# Private Ansible files (use the .example versions instead)
+inventory.ini
+vault.yml
+*.retry
